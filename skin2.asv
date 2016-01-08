@@ -1,0 +1,134 @@
+function [skin_info,imgpath] = skin2(imgpath)
+%% Parameters
+roi_size = 100;  % Dimension of ROI for determining direction is square with sides (2*roi_size+1)
+dist = 100;      % Distance of pixels perpendicular to breast outline to check
+
+%% Skin Thickness Detection
+% original_img = imread(imgpath);
+original_img = dicomread(imgpath);
+
+% Segmentation
+gmag = imgradient(original_img);
+gmag = im2bw(gmag,0);
+gmag = ~gmag;
+bw_img = bwareaopen(gmag,50000);
+
+% Closing to smooth boundaries
+se = strel('disk',10);
+bw_img = imclose(bw_img,se);
+
+% Boundary Marking
+edges = bwperim(bw_img);
+edges(1,:) = 0;
+edges(:,1) = 0;
+edges(end,:) = 0;
+[edge_row,edge_col] = find(edges);
+
+% Sort edge points by row
+[edge_row, index] = sort(edge_row);
+edge_col = edge_col(index);
+
+% % Remove unnecessary edge points
+% edges = [edge_row, edge_col];
+% edges( all(~edges,2),:) = [];
+
+% Initialize direction matrix/thickness vector/corresponding internal skin pixel for each edge pixel
+dirs = zeros(length(edge_col),2);
+thickness = zeros(length(edge_col),1);
+internal_skin_y = zeros(length(edge_col),1);
+internal_skin_x = zeros(length(edge_col),1);
+external_skin_y = zeros(length(edge_col),1);
+external_skin_x = zeros(length(edge_col),1);
+
+% Find corresponding internal skin layer pixel for each boundary pixel
+for i = 1:30:length(edge_col)
+    
+    % Ignore edge pixels close to image boundaries
+    if edge_row(i) - roi_size < 1 || edge_row(i) + roi_size > size(original_img,1) ...
+            || edge_col(i) - roi_size < 1 || edge_col(i) + roi_size > size(original_img,2)
+        continue;
+    end
+    
+    roi = bw_img((edge_row(i)-roi_size):(edge_row(i)+roi_size), ...
+        (edge_col(i)-roi_size):(edge_col(i)+roi_size));
+    
+    a = find(roi(1,:),1);
+    b = find(roi(end,:),1);
+    c = find(roi(:,1),1);
+    d = find(roi(:,end),1);
+    
+    angle = 0;
+    
+    if ~isempty(c) && ~isempty(d)
+        angle = atan((c(1)-d(1))/size(roi,1));
+    elseif ~isempty(b) && ~isempty(d)
+        angle = atan((size(roi,1)-d(1))/(size(roi,1)-b(1)));
+    elseif ~isempty(b) && ~isempty(c)
+        angle = atan(-(size(roi,1)-c(1))/b(1));
+    elseif ~isempty(a) && ~isempty(d)
+        angle = atan(-d(1)/(size(roi,1)-a(1)));
+    elseif ~isempty(a) && ~isempty(c)
+        angle = atan(c(1))/(a(1));
+    elseif ~isempty(a) && ~isempty(b)
+        angle = atan(size(roi,1)/(a(1)-b(1)));
+    end
+    
+    
+    if angle >= 0
+        angle = angle - pi/2;
+    elseif angle < 0
+        angle = angle + pi/2;
+    end
+    
+    dirs(i,:) = [cos(-angle) sin(-angle)];
+    
+    % Pixel intensity profile of line perpendicular to edge
+    yi = [edge_row(i),edge_row(i) + dist*dirs(i,2)];
+    xi = [edge_col(i),edge_col(i) + dist*dirs(i,1)];
+    linelength = round(sqrt((dist*dirs(i,1))^2+(dist*dirs(i,2))^2));
+    skinhist = improfile(original_img,xi,yi,linelength);
+    
+    % Find internal skin pixel based on gradient minimum
+    skinhist = gradient(skinhist);
+    [pks,loc] = findpeaks(-skinhist); 
+    pks(pks < 7) = 0;
+    loc = loc(pks == max(pks));
+    if isempty(loc)
+        continue;
+    end
+    thickness(i) = loc(1);
+
+    [pks,loc] = findpeaks(skinhist);
+    %     internal_skin_x(i) = edge_col(i) + loc(1)*dirs(i,1);
+    %     internal_skin_y(i) = edge_row(i) + loc(1)*dirs(i,2);
+    %
+    % Find external skin pixel based on gradient maximum
+    %     [pks,loc] = findpeaks(skinhist(1:30));
+    %     pks(pks < 7) = 0;
+    %     loc = loc(pks == max(pks));
+    %     if isempty(loc)
+    %         continue;
+    %     end
+    %     external_skin_x(i) = edge_col(i) + loc(1)*dirs(i,1);
+    %     external_skin_y(i) = edge_row(i) + loc(1)*dirs(i,2);
+    %
+    %     subplot(2,1,1);
+    %     roi2 = original_img((edge_row(i)-roi_size):(edge_row(i)+roi_size), ...
+    %         (edge_col(i)-roi_size):(edge_col(i)+roi_size));
+    %
+    %     imshow(roi2);
+    %     hold on;
+    %
+    %     scatter(roi_size + locmin*dirs(i,1),roi_size + locmin*dirs(i,2),'x');
+    %
+    %     subplot(2,1,2);
+    %     findpeaks(-skinhist);
+    %
+    %     pause;
+    
+end
+
+skin_info = [edge_col,edge_row,dirs,thickness];
+skin_info(skin_info(:,3) == 0,:) = [];
+
+end
