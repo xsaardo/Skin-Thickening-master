@@ -21,3 +21,6 @@ A thickness value is assigned to each boundary coordinate.  Outputs are the aver
 Better outlier suppression - anomalous thickness values are still present with the current outlier truncation method 
 
 ~~Closer fit for external skin layer - Current method of using image gradient to segment results in an external boundary pixels away from the actual boundary.~~ Done!
+
+![alt text](https://github.com/xsaardo/Skin-Thickening-master/blob/master/sample-skin-thickening-1.png "Mammogram with skin layer labeled") ![alt text](https://github.com/xsaardo/Skin-Thickening-master/blob/master/sample-skin-thickening-2.png "Close up of labeled skin layer")
+
